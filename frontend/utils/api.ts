@@ -9,7 +9,6 @@ interface FetchOptions extends RequestInit {
 async function fetchWithTimeout(url: string, options: FetchOptions = {}) {
   const { timeout = 10000, ...fetchOptions } = options;
   
-  // Validate that we have a proper URL
   if (!API_BASE || API_BASE === 'undefined') {
     throw new Error('Backend URL not configured');
   }
@@ -31,28 +30,15 @@ async function fetchWithTimeout(url: string, options: FetchOptions = {}) {
   }
 }
 
-// Retry wrapper for API calls
-async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
-    }
-  }
-  throw new Error('Max retries reached');
-}
-
 export const api = {
   // Auth
-  async exchangeSession(sessionId: string) {
+  async syncUser(accessToken: string) {
     const response = await fetchWithTimeout(`${API_BASE}/api/auth/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId }),
+      body: JSON.stringify({ access_token: accessToken }),
     });
-    if (!response.ok) throw new Error('Session exchange failed');
+    if (!response.ok) throw new Error('Sync failed');
     return response.json();
   },
 

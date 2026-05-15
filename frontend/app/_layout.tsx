@@ -1,3 +1,4 @@
+import { supabase } from '../utils/supabase';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,55 +10,42 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function RootLayout() {
   const { setUser, setIsLoading, setItems } = useAppStore();
 
-  useEffect(() => {
-    const initApp = async () => {
-      // Retry logic for API calls
-      const retryFetch = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1500): Promise<T | null> => {
-        for (let i = 0; i < retries; i++) {
-          try {
-            return await fn();
-          } catch (error) {
-            console.log(`Retry ${i + 1}/${retries} failed:`, error);
-            if (i === retries - 1) return null;
-            await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
-          }
-        }
-        return null;
-      };
+useEffect(() => {
+  const initApp = async () => {
+    try {
+      // Carica gli items
+      const items = await api.getItems();
+      if (items) setItems(items);
 
-      try {
-        // Try to get stored session token
-        const sessionToken = await AsyncStorage.getItem('session_token');
-        
-        if (sessionToken) {
-          try {
-            const user = await api.getMe(sessionToken);
-            setUser(user);
-          } catch (error) {
-            // Session invalid, clear it
-            await AsyncStorage.removeItem('session_token');
-          }
+      // Controlla sessione Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        // Sincronizza con il backend
+        try {
+          await api.syncUser(session.access_token);
+          const user = await api.getMe(session.access_token);
+          setUser(user);
+        } catch (error) {
+          console.log('Backend sync error:', error);
+          // Usa i dati Supabase direttamente
+          setUser({
+            user_id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.full_name || session.user.email || '',
+            picture: session.user.user_metadata?.avatar_url || null,
+          });
         }
-        
-        // Seed data with retry
-        await retryFetch(() => api.seedData(), 2, 1000);
-        
-        // Load items with retry
-        const items = await retryFetch(() => api.getItems(), 3, 1500);
-        if (items) {
-          setItems(items);
-        }
-      } catch (error) {
-        console.error('Init error:', error);
-      } finally {
-        setIsLoading(false);
       }
-    };
+    } catch (error) {
+      console.error('Init error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    // Delay initial load slightly to allow tunnel to stabilize
-    const timer = setTimeout(initApp, 500);
-    return () => clearTimeout(timer);
-  }, []);
+  const timer = setTimeout(initApp, 500);
+  return () => clearTimeout(timer);
+}, []); 
 
   return (
     <SafeAreaProvider>
